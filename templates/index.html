@@ -3,9 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DSMCO</title>
+    <title>DSMCO - Dual Sector Markov Chain Optimizer</title>
 </head>
 <body>
     <h1>Dual Sector Markov Chain Optimizer</h1>
+    <p>Upload a CSV file containing loan history data to calculate transition matrices and optimize capital allocation.</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul style="color: red;">
+        {% for message in messages %}
+          <li>{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <div>
+            <label for="file">Loan Data (CSV):</label>
+            <input type="file" name="file" id="file" accept=".csv" required>
+        </div>
+        <br>
+
+        <fieldset>
+            <legend>Optimization Parameters</legend>
+
+            <div>
+                <label for="risk_threshold">Risk Threshold (Max Default Probability):</label>
+                <input type="number" name="risk_threshold" id="risk_threshold" step="0.01" min="0" max="1" value="0.05" required>
+            </div>
+            <br>
+
+            <div>
+                <label for="formal_returns">Formal Sector Returns (Performing, Delinquent, Defaulted, Recovered):</label>
+                <input type="text" name="formal_returns" id="formal_returns" placeholder="10, 5, -20, 8" required>
+                <small>Enter 4 comma-separated numbers (e.g., 10, 5, -20, 8)</small>
+            </div>
+            <br>
+
+            <div>
+                <label for="informal_returns">Informal Sector Returns (Performing, Delinquent, Defaulted, Recovered):</label>
+                <input type="text" name="informal_returns" id="informal_returns" placeholder="15, 8, -25, 10" required>
+                <small>Enter 4 comma-separated numbers (e.g., 15, 8, -25, 10)</small>
+            </div>
+        </fieldset>
+
+        <br>
+        <button type="submit">Calculate & Optimize</button>
+    </form>
 </body>
 </html>

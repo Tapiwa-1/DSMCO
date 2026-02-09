@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DSMCO - Results</title>
+</head>
+<body>
+    <h1>Optimization Results</h1>
+
+    <h2>Transition Matrices</h2>
+
+    <h3>Formal Sector</h3>
+    {{ formal_matrix_html|safe }}
+
+    <h3>Informal Sector</h3>
+    {{ informal_matrix_html|safe }}
+
+    <h2>Capital Allocation</h2>
+    <p>Optimal Allocation to Formal Sector: <strong>{{ "%.2f"|format(allocation_formal * 100) }}%</strong></p>
+    <p>Optimal Allocation to Informal Sector: <strong>{{ "%.2f"|format((1 - allocation_formal) * 100) }}%</strong></p>
+
+    <h2>Portfolio Metrics</h2>
+    <p>Expected Portfolio ROA: {{ "%.2f"|format(portfolio_roa) }}</p>
+    <p>Portfolio Risk (Default Probability): {{ "%.4f"|format(portfolio_risk) }}</p>
+
+    <br>
+    <a href="/">Back to Optimization</a>
+</body>
+</html>

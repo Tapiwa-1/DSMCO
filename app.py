@@ -32,6 +32,17 @@ class OptimizationResult(db.Model):
     portfolio_roa = db.Column(db.Float)
     portfolio_risk = db.Column(db.Float)
 
+    # Relationship to LoanRecord (one-to-many)
+    loan_records = db.relationship('LoanRecord', backref='optimization_result', lazy='dynamic')
+
+class LoanRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    optimization_result_id = db.Column(db.Integer, db.ForeignKey('optimization_result.id'), nullable=False)
+    loan_id = db.Column(db.String(50))
+    period = db.Column(db.String(50)) # String to be safe with date-like periods or mixed types
+    state = db.Column(db.String(50))
+    sector = db.Column(db.String(50))
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
@@ -53,30 +64,66 @@ def history():
 
 @app.route('/result/<int:id>')
 def result(id):
-    result = OptimizationResult.query.get_or_404(id)
+    result_obj = OptimizationResult.query.get_or_404(id)
 
-    # Deserialize
-    formal_matrix = pd.read_json(io.StringIO(result.formal_matrix_json))
-    informal_matrix = pd.read_json(io.StringIO(result.informal_matrix_json))
+    # --- Dataset Filtering Logic ---
+    data_page = request.args.get('data_page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    search_query = request.args.get('q', '').strip()
+    filter_sector = request.args.get('sector', '').strip()
+    filter_state = request.args.get('state', '').strip()
+    sort_by = request.args.get('sort', 'id') # Default sort by ID (order of insertion usually)
+    sort_order = request.args.get('order', 'asc')
 
-    # Re-index if necessary (read_json might return string indices that sort alphabetically?)
-    # matrix_engine uses: STATES = ['Performing', 'Delinquent', 'Defaulted', 'Recovered']
-    # For now, we trust pd.read_json(to_json()) roundtrip preserves structure reasonably well for display.
-    # But for guaranteed order, we might need to reindex.
-    # Let's import STATES if we want to be strict, but for display likely fine.
-    # Actually, let's just make sure the order is correct for the user.
+    query = LoanRecord.query.filter_by(optimization_result_id=id)
+
+    # Search
+    if search_query:
+        query = query.filter(LoanRecord.loan_id.contains(search_query))
+
+    # Filter
+    if filter_sector:
+        query = query.filter(LoanRecord.sector == filter_sector)
+    if filter_state:
+        query = query.filter(LoanRecord.state == filter_state)
+
+    # Sort
+    if hasattr(LoanRecord, sort_by):
+        col = getattr(LoanRecord, sort_by)
+        if sort_order == 'desc':
+            query = query.order_by(col.desc())
+        else:
+            query = query.order_by(col.asc())
+    else:
+        query = query.order_by(LoanRecord.id.asc())
+
+    # Pagination
+    loan_pagination = query.paginate(page=data_page, per_page=per_page)
+
+    # --- Matrix Deserialization ---
+    formal_matrix = pd.read_json(io.StringIO(result_obj.formal_matrix_json))
+    informal_matrix = pd.read_json(io.StringIO(result_obj.informal_matrix_json))
+
     STATES = ['Performing', 'Delinquent', 'Defaulted', 'Recovered']
     formal_matrix = formal_matrix.reindex(index=STATES, columns=STATES)
     informal_matrix = informal_matrix.reindex(index=STATES, columns=STATES)
+
+    # Prepare args for pagination links (remove data_page to avoid collision)
+    current_args = request.args.copy()
+    if 'data_page' in current_args:
+        current_args.pop('data_page')
 
     return render_template(
         'results.html',
         formal_matrix_html=formal_matrix.to_html(classes='table table-striped'),
         informal_matrix_html=informal_matrix.to_html(classes='table table-striped'),
-        allocation_formal=result.allocation_formal,
-        portfolio_roa=result.portfolio_roa,
-        portfolio_risk=result.portfolio_risk,
-        result_id=result.id
+        allocation_formal=result_obj.allocation_formal,
+        portfolio_roa=result_obj.portfolio_roa,
+        portfolio_risk=result_obj.portfolio_risk,
+        result_id=result_obj.id,
+        loan_pagination=loan_pagination,
+        # Pass back current filter params to keep them in links
+        current_args=current_args
     )
 
 @app.route('/upload', methods=['POST'])
@@ -168,15 +215,23 @@ def upload():
             db.session.add(optimization_result)
             db.session.commit()
 
-            return render_template(
-                'results.html',
-                formal_matrix_html=formal_matrix.to_html(classes='table table-striped'),
-                informal_matrix_html=informal_matrix.to_html(classes='table table-striped'),
-                allocation_formal=allocation_formal,
-                portfolio_roa=portfolio_roa,
-                portfolio_risk=portfolio_risk,
-                result_id=optimization_result.id
-            )
+            # Save Loan Records
+            # Optimize bulk insert
+            # Convert DataFrame to list of dicts or objects
+            loan_records = []
+            for _, row in df.iterrows():
+                loan_records.append(LoanRecord(
+                    optimization_result_id=optimization_result.id,
+                    loan_id=str(row['Loan_ID']),
+                    period=str(row['Period']),
+                    state=str(row['State']),
+                    sector=str(row['Sector'])
+                ))
+
+            db.session.add_all(loan_records)
+            db.session.commit()
+
+            return redirect(url_for('result', id=optimization_result.id))
 
         except Exception as e:
             flash(f"Error processing request: {e}")

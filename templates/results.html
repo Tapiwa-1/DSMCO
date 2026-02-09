@@ -83,6 +83,138 @@
                 </div>
             </div>
 
+            <!-- Loan Dataset Section -->
+            {% if loan_pagination %}
+            <div class="border-t border-gray-200 pt-8 mt-8">
+                <h2 class="text-2xl font-bold text-gray-900 mb-6">Loan Dataset</h2>
+
+                <!-- Filters & Controls -->
+                <form method="get" action="{{ url_for('result', id=result_id) }}" class="bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <!-- Search -->
+                        <div class="col-span-1 lg:col-span-1">
+                            <label for="q" class="block text-sm font-medium text-gray-700">Search Loan ID</label>
+                            <input type="text" name="q" id="q" value="{{ current_args.get('q', '') }}" placeholder="Loan ID..." class="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md p-2 border">
+                        </div>
+
+                        <!-- Filter Sector -->
+                        <div>
+                            <label for="sector" class="block text-sm font-medium text-gray-700">Sector</label>
+                            <select name="sector" id="sector" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                <option value="">All Sectors</option>
+                                <option value="Formal" {% if current_args.get('sector') == 'Formal' %}selected{% endif %}>Formal</option>
+                                <option value="Informal" {% if current_args.get('sector') == 'Informal' %}selected{% endif %}>Informal</option>
+                            </select>
+                        </div>
+
+                        <!-- Filter State -->
+                        <div>
+                            <label for="state" class="block text-sm font-medium text-gray-700">State</label>
+                            <select name="state" id="state" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                <option value="">All States</option>
+                                <option value="Performing" {% if current_args.get('state') == 'Performing' %}selected{% endif %}>Performing</option>
+                                <option value="Delinquent" {% if current_args.get('state') == 'Delinquent' %}selected{% endif %}>Delinquent</option>
+                                <option value="Defaulted" {% if current_args.get('state') == 'Defaulted' %}selected{% endif %}>Defaulted</option>
+                                <option value="Recovered" {% if current_args.get('state') == 'Recovered' %}selected{% endif %}>Recovered</option>
+                            </select>
+                        </div>
+
+                        <!-- Sort By -->
+                        <div>
+                            <label for="sort" class="block text-sm font-medium text-gray-700">Sort By</label>
+                            <select name="sort" id="sort" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                <option value="id" {% if current_args.get('sort') == 'id' %}selected{% endif %}>Default</option>
+                                <option value="loan_id" {% if current_args.get('sort') == 'loan_id' %}selected{% endif %}>Loan ID</option>
+                                <option value="period" {% if current_args.get('sort') == 'period' %}selected{% endif %}>Period</option>
+                            </select>
+                        </div>
+
+                         <!-- Order -->
+                         <div>
+                            <label for="order" class="block text-sm font-medium text-gray-700">Order</label>
+                            <select name="order" id="order" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                                <option value="asc" {% if current_args.get('order') == 'asc' %}selected{% endif %}>Ascending</option>
+                                <option value="desc" {% if current_args.get('order') == 'desc' %}selected{% endif %}>Descending</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 flex justify-end">
+                         <a href="{{ url_for('result', id=result_id) }}" class="mr-3 inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none">
+                            Reset
+                        </a>
+                        <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none">
+                            Apply Filters
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Data Table -->
+                <div class="overflow-x-auto border rounded-lg mb-4">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Loan ID</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Period</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">State</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for loan in loan_pagination.items %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ loan.loan_id }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ loan.period }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                                        {% if loan.sector == 'Formal' %}bg-blue-100 text-blue-800{% else %}bg-green-100 text-green-800{% endif %}">
+                                        {{ loan.sector }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ loan.state }}</td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-500">No records found matching your criteria.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                 <div class="flex items-center justify-between">
+                     <div class="text-sm text-gray-700">
+                        Showing <span class="font-medium">{{ loan_pagination.first }}</span> to <span class="font-medium">{{ loan_pagination.last }}</span> of <span class="font-medium">{{ loan_pagination.total }}</span> entries
+                     </div>
+                     <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                        {% if loan_pagination.has_prev %}
+                        <a href="{{ url_for('result', id=result_id, data_page=loan_pagination.prev_num, **current_args) }}" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                            <span class="sr-only">Previous</span>
+                            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </a>
+                        {% endif %}
+
+                         <!-- Simple Page Numbers logic for now -->
+                         <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                            Page {{ loan_pagination.page }} of {{ loan_pagination.pages }}
+                        </span>
+
+                        {% if loan_pagination.has_next %}
+                        <a href="{{ url_for('result', id=result_id, data_page=loan_pagination.next_num, **current_args) }}" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                            <span class="sr-only">Next</span>
+                            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                            </svg>
+                        </a>
+                        {% endif %}
+                     </nav>
+                 </div>
+            </div>
+            {% endif %}
+
             <div class="mt-8 pt-6 border-t border-gray-200">
                 <a href="/" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                     ← Back to Optimization

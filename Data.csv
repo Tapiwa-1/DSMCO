@@ -1,0 +1,11 @@
+loan_id,sector,borrower_type,initial_state,final_state,amount_usd
+L001,Formal,Civil Servant,S1,S1,500
+L002,Formal,SME-Manufacturing,S1,S2,2500
+L003,Informal,Cross-Border Trader,S1,S1,300
+L004,Informal,Market Vendor,S2,S3,150
+L005,Informal,Tuckshop Owner,S3,S4,400
+L006,Formal,Private Sector Employee,S2,S1,1200
+L007,Formal,SME-Agro-Processing,S1,S3,5000
+L008,Informal,Artisan-Miner,S1,S2,800
+L009,Informal,Street Vendor,S2,S4,100
+L010,Formal,Civil Servant,S3,S3,600

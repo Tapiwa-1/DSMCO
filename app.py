@@ -1,6 +1,10 @@
 from flask import Flask, render_template, request, flash, redirect, url_for
 import pandas as pd
 import numpy as np
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+import json
+import io
 
 from models.matrix_engine import (
     calculate_transition_matrix,
@@ -11,12 +15,116 @@ from models.matrix_engine import (
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key' # Required for flash messages
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dsmco.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+
+class OptimizationResult(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    formal_matrix_json = db.Column(db.Text)
+    informal_matrix_json = db.Column(db.Text)
+    formal_returns_json = db.Column(db.Text)
+    informal_returns_json = db.Column(db.Text)
+    risk_threshold = db.Column(db.Float)
+    allocation_formal = db.Column(db.Float)
+    portfolio_roa = db.Column(db.Float)
+    portfolio_risk = db.Column(db.Float)
+
+    # Relationship to LoanRecord (one-to-many)
+    loan_records = db.relationship('LoanRecord', backref='optimization_result', lazy='dynamic')
+
+class LoanRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    optimization_result_id = db.Column(db.Integer, db.ForeignKey('optimization_result.id'), nullable=False)
+    loan_id = db.Column(db.String(50))
+    period = db.Column(db.String(50)) # String to be safe with date-like periods or mixed types
+    state = db.Column(db.String(50))
+    sector = db.Column(db.String(50))
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
         return upload()
     return render_template('index.html')
+
+@app.route('/history')
+def history():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 5, type=int)
+
+    # Validate per_page
+    if per_page not in [5, 10, 15, 20]:
+        per_page = 5
+
+    pagination = OptimizationResult.query.order_by(OptimizationResult.created_at.desc()).paginate(page=page, per_page=per_page)
+
+    return render_template('history.html', pagination=pagination, per_page=per_page)
+
+@app.route('/result/<int:id>')
+def result(id):
+    result_obj = OptimizationResult.query.get_or_404(id)
+
+    # --- Dataset Filtering Logic ---
+    data_page = request.args.get('data_page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    search_query = request.args.get('q', '').strip()
+    filter_sector = request.args.get('sector', '').strip()
+    filter_state = request.args.get('state', '').strip()
+    sort_by = request.args.get('sort', 'id') # Default sort by ID (order of insertion usually)
+    sort_order = request.args.get('order', 'asc')
+
+    query = LoanRecord.query.filter_by(optimization_result_id=id)
+
+    # Search
+    if search_query:
+        query = query.filter(LoanRecord.loan_id.contains(search_query))
+
+    # Filter
+    if filter_sector:
+        query = query.filter(LoanRecord.sector == filter_sector)
+    if filter_state:
+        query = query.filter(LoanRecord.state == filter_state)
+
+    # Sort
+    if hasattr(LoanRecord, sort_by):
+        col = getattr(LoanRecord, sort_by)
+        if sort_order == 'desc':
+            query = query.order_by(col.desc())
+        else:
+            query = query.order_by(col.asc())
+    else:
+        query = query.order_by(LoanRecord.id.asc())
+
+    # Pagination
+    loan_pagination = query.paginate(page=data_page, per_page=per_page)
+
+    # --- Matrix Deserialization ---
+    formal_matrix = pd.read_json(io.StringIO(result_obj.formal_matrix_json))
+    informal_matrix = pd.read_json(io.StringIO(result_obj.informal_matrix_json))
+
+    STATES = ['Performing', 'Delinquent', 'Defaulted', 'Recovered']
+    formal_matrix = formal_matrix.reindex(index=STATES, columns=STATES)
+    informal_matrix = informal_matrix.reindex(index=STATES, columns=STATES)
+
+    # Prepare args for pagination links (remove data_page to avoid collision)
+    current_args = request.args.copy()
+    if 'data_page' in current_args:
+        current_args.pop('data_page')
+
+    return render_template(
+        'results.html',
+        formal_matrix_html=formal_matrix.to_html(classes='table table-striped'),
+        informal_matrix_html=informal_matrix.to_html(classes='table table-striped'),
+        allocation_formal=result_obj.allocation_formal,
+        portfolio_roa=result_obj.portfolio_roa,
+        portfolio_risk=result_obj.portfolio_risk,
+        result_id=result_obj.id,
+        loan_pagination=loan_pagination,
+        # Pass back current filter params to keep them in links
+        current_args=current_args
+    )
 
 @app.route('/upload', methods=['POST'])
 def upload():
@@ -53,8 +161,8 @@ def upload():
                     raise ValueError("Returns must have exactly 4 values.")
 
                 # Convert to numpy arrays
-                formal_returns = np.array(formal_returns)
-                informal_returns = np.array(informal_returns)
+                formal_returns_np = np.array(formal_returns)
+                informal_returns_np = np.array(informal_returns)
 
                 risk_threshold = float(request.form['risk_threshold'])
 
@@ -71,8 +179,8 @@ def upload():
                 informal_matrix.values,
                 initial_dist,
                 initial_dist,
-                formal_returns,
-                informal_returns,
+                formal_returns_np,
+                informal_returns_np,
                 risk_threshold
             )
 
@@ -82,8 +190,8 @@ def upload():
             next_informal = predict_next_state(initial_dist, informal_matrix.values)
 
             # 2. Returns
-            ret_formal = calculate_expected_return(next_formal, formal_returns)
-            ret_informal = calculate_expected_return(next_informal, informal_returns)
+            ret_formal = calculate_expected_return(next_formal, formal_returns_np)
+            ret_informal = calculate_expected_return(next_informal, informal_returns_np)
 
             portfolio_roa = allocation_formal * ret_formal + (1 - allocation_formal) * ret_informal
 
@@ -93,14 +201,37 @@ def upload():
 
             portfolio_risk = allocation_formal * prob_default_formal + (1 - allocation_formal) * prob_default_informal
 
-            return render_template(
-                'results.html',
-                formal_matrix_html=formal_matrix.to_html(classes='table table-striped'),
-                informal_matrix_html=informal_matrix.to_html(classes='table table-striped'),
-                allocation_formal=allocation_formal,
-                portfolio_roa=portfolio_roa,
-                portfolio_risk=portfolio_risk
+            # Save to Database
+            optimization_result = OptimizationResult(
+                formal_matrix_json=formal_matrix.to_json(),
+                informal_matrix_json=informal_matrix.to_json(),
+                formal_returns_json=json.dumps(formal_returns_np.tolist()),
+                informal_returns_json=json.dumps(informal_returns_np.tolist()),
+                risk_threshold=risk_threshold,
+                allocation_formal=float(allocation_formal),
+                portfolio_roa=float(portfolio_roa),
+                portfolio_risk=float(portfolio_risk)
             )
+            db.session.add(optimization_result)
+            db.session.commit()
+
+            # Save Loan Records
+            # Optimize bulk insert
+            # Convert DataFrame to list of dicts or objects
+            loan_records = []
+            for _, row in df.iterrows():
+                loan_records.append(LoanRecord(
+                    optimization_result_id=optimization_result.id,
+                    loan_id=str(row['Loan_ID']),
+                    period=str(row['Period']),
+                    state=str(row['State']),
+                    sector=str(row['Sector'])
+                ))
+
+            db.session.add_all(loan_records)
+            db.session.commit()
+
+            return redirect(url_for('result', id=optimization_result.id))
 
         except Exception as e:
             flash(f"Error processing request: {e}")
@@ -108,4 +239,6 @@ def upload():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
     app.run(debug=True)
